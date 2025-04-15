@@ -9,18 +9,29 @@
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script src="https://unpkg.com/leaflet.gridlayer.googlemutant@0.10.0/Leaflet.GoogleMutant.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/0.4.14/leaflet.draw.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@turf/turf@6/turf.min.js"></script>
 
     <style>
         body {
             font-family: Arial, sans-serif;
             margin: 0;
             padding: 0;
-            height: 100%;
-            background-color: #f0f0f0;
+            background-color: #f4f4f4;
+        }
+
+        #instructions {
+            background-color: #2C3E50;
+            color: white;
+            padding: 15px;
+            border-left: 5px solid #EC19C2;
+            margin: 20px;
+            font-size: 1.1em;
+            border-radius: 5px;
         }
 
         #map {
-            height: 100vh;
+            height: 600px;
             width: 100%;
         }
 
@@ -34,14 +45,60 @@
             cursor: pointer;
             margin-top: 10px;
         }
+
+        input[type="number"], input[type="text"] {
+            padding: 5px;
+            font-size: 1.2em;
+        }
+
+        #results-space {
+            margin-top: 20px;
+        }
     </style>
 </head>
 <body>
 
+    <!-- Instructions Section -->
+    <div id="instructions">
+        <h2>How to Use This Tool</h2>
+        <ol>
+            <li>Enter an address and click <strong>Search</strong> to zoom in on your location.</li>
+            <li>Use the polygon tool to draw around surfaces where rainwater can be collected (e.g., rooftops, driveways).</li>
+            <li>Adjust the <strong>Annual Rainfall</strong> value if needed (default is 12 inches).</li>
+            <li>Click <strong>Calculate</strong> to see potential rainwater capture.</li>
+            <li>To remove drawings and reset results, click <strong>Clear Results</strong>.</li>
+        </ol>
+    </div>
+
+    <!-- Map Container -->
     <div id="map"></div>
 
+    <!-- Input Fields -->
+    <div id="inputs" style="margin: 20px;">
+        <p>Enter Address: <input type="text" id="addressInput">
+        <button id="searchAddress">Search</button></p>
+        
+        <p>Enter Your Annual Rainfall (in inches):
+            <input type="number" id="rainfall" value="12" />
+            <br />
+            <a href="https://precip.ai/rainfall-totals/zipcode/" target="_blank">
+                Find Rainfall by Zip Code
+            </a>
+        </p>
+        
+        <button id="calculate">Calculate</button>
+        <button id="clearResults">Clear Results</button>
+    </div>
+
+    <!-- Results Section -->
+    <div id="results-space">
+        <p>Area (square feet): <span id="area"></span></p>
+        <p>Potential Annual Rainwater Harvesting in Gallons: <span id="capture"></span></p>
+        <p>Gallons of Rainwater per Inch of Rain: <span id="gallonsPerInch"></span></p>
+    </div>
+
     <script>
-        // Initialize the map with coordinates (San Diego as an example) and zoom level 10
+        // Initialize Map
         const map = L.map('map').setView([32.7157, -117.1611], 10);
 
         // Create Google Satellite layer
@@ -62,11 +119,64 @@
             "Hybrid": googleHybrid
         }).addTo(map);
 
-        // You can add more functionalities like search or drawing tools here
-        // Example: Map zoom control or address search etc.
+        // Address Search
+        document.getElementById('searchAddress').addEventListener('click', function () {
+            let address = document.getElementById('addressInput').value;
+            fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${address}`)
+                .then(response => response.json())
+                .then(data => {
+                    if (data.length > 0) {
+                        let lat = data[0].lat;
+                        let lon = data[0].lon;
+                        map.setView([lat, lon], 19); // Zoom into address
+                    }
+                });
+        });
+
+        // Drawing Tool
+        let drawnItems = new L.FeatureGroup().addTo(map);
+        let drawControl = new L.Control.Draw({
+            edit: { featureGroup: drawnItems },
+            draw: {
+                circle: false,
+                marker: false,
+                circlemarker: false,
+                polyline: false,
+                rectangle: false // Removes rectangle tool
+            },
+        });
+
+        map.addControl(drawControl);
+
+        // Capture Polygon Draw Event
+        map.on(L.Draw.Event.CREATED, function(event) {
+            let layer = event.layer;
+            drawnItems.addLayer(layer);
+            let geojson = layer.toGeoJSON();
+            let areaMeters = turf.area(geojson);
+            let areaFeet = Math.round(areaMeters * 10.7639);
+            document.getElementById('area').textContent = areaFeet.toLocaleString();
+        });
+
+        // Calculation Function
+        document.getElementById('calculate').addEventListener('click', function () {
+            let areaFeet = parseFloat(document.getElementById('area').textContent.replace(/,/g, '')) || 0;
+            let rainfall = parseFloat(document.getElementById('rainfall').value) || 12;
+            let gallonsPerInch = Math.round(areaFeet * 0.623);
+            let totalGallons = Math.round(gallonsPerInch * rainfall);
+            document.getElementById('gallonsPerInch').textContent = gallonsPerInch.toLocaleString();
+            document.getElementById('capture').textContent = totalGallons.toLocaleString();
+        });
+
+        // Clear Results
+        document.getElementById('clearResults').addEventListener('click', function () {
+            drawnItems.clearLayers();
+            document.getElementById('area').textContent = "";
+            document.getElementById('gallonsPerInch').textContent = "";
+            document.getElementById('capture').textContent = "";
+        });
 
     </script>
 
 </body>
 </html>
-
